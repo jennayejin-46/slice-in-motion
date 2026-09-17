@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f3eee6" />
+  <title>Slice / In Motion — Interactive Game</title>
+  <style>
+    :root {
+      --paper: #f3eee6;
+      --ink: #141414;
+      --muted: #716c65;
+      --line: rgba(20, 20, 20, 0.18);
+      --accent: #ff5a22;
+      --lime: #d8ff47;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+
+    body { overflow-x: hidden; }
+
+    .page {
+      width: min(1500px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 34px 0 52px;
+    }
+
+    .masthead {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: start;
+      gap: 24px;
+      padding-bottom: 26px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 7vw, 104px);
+      line-height: .86;
+      letter-spacing: -.065em;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .masthead-copy {
+      width: min(360px, 100%);
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .game-shell {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 2px solid var(--ink);
+      border-radius: 28px;
+      background: #0c0c0c;
+      box-shadow: 0 16px 0 rgba(20,20,20,.08);
+    }
+
+    #game-mount,
+    #game-mount canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
+    #game-mount canvas { object-fit: contain; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 1fr;
+      gap: 0;
+      margin-top: 26px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .meta > div {
+      padding: 20px 24px 22px 0;
+      min-width: 0;
+    }
+
+    .meta > div + div {
+      padding-left: 24px;
+      border-left: 1px solid var(--line);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .meta p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .key {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.35);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .key b {
+      color: var(--ink);
+      font-size: 11px;
+      letter-spacing: .05em;
+    }
+
+    .page-footer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-top: 16px;
+    }
+
+    .note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .portfolio-logo {
+      display: block;
+      width: clamp(108px, 10vw, 150px);
+      height: auto;
+      flex: 0 0 auto;
+    }
+
+    @media (max-width: 760px) {
+      .page { width: min(100% - 24px, 1500px); padding-top: 20px; }
+      .masthead { grid-template-columns: 1fr; }
+      .masthead-copy { margin-top: 0; }
+      .game-shell { border-radius: 18px; }
+      .meta { grid-template-columns: 1fr; }
+      .meta > div { padding: 16px 0; }
+      .meta > div + div { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+      .page-footer { align-items: center; }
+      .portfolio-logo { width: 104px; }
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@1.3.1/dist/ml5.min.js"></script>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Interactive Game · Body Tracking</p>
+        <h1>Slice /<br>In Motion</h1>
+      </div>
+      <p class="masthead-copy">
+        A camera-based slicing game that turns full-body movement into the controller. Move fast, slice the characters, avoid the bombs, and climb the local leaderboard.
+      </p>
+    </header>
+
+    <section class="game-shell" aria-label="Slice In Motion interactive game">
+      <div id="game-mount"></div>
+    </section>
+
+    <section class="meta" aria-label="Project information">
+      <div>
+        <span class="meta-label">How to play</span>
+        <p>Step into frame with your upper body and both arms visible. Swing either hand quickly through a character to slice it.</p>
+      </div>
+      <div>
+        <span class="meta-label">Tracking</span>
+        <p>Full-body pose estimation follows both hands in real time. Slow movement is ignored so the gesture feels intentional.</p>
+      </div>
+      <div>
+        <span class="meta-label">Built with</span>
+        <p>p5.js · ml5.js · BlazePose · Web Audio API</p>
+      </div>
+    </section>
+
+    <div class="controls" aria-label="Keyboard controls">
+      <span class="key"><b>ENTER</b> confirm name</span>
+      <span class="key"><b>SPACE</b> start / replay</span>
+      <span class="key"><b>M</b> sound</span>
+      <span class="key"><b>N</b> new player</span>
+      <span class="key"><b>D</b> tracking debug</span>
+    </div>
+    <footer class="page-footer">
+      <p class="note">Camera access is used only for real-time pose tracking in the browser.</p>
+      <img class="portfolio-logo" src="logo.png" alt="Jenna logo" />
+    </footer>
+  </main>
+
+  <script src="sketch.js"></script>
+</body>
+</html>
