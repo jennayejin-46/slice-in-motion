@@ -31,7 +31,13 @@ let playerName = "";
 let nameDraft = "";
 let leaderboard = [];
 let scoreSaved = false;
-const LEADERBOARD_KEY = "sliceInMotionLeaderboardV1";
+let leaderboardLoading = false;
+let leaderboardError = "";
+
+// GLOBAL LEADERBOARD — fill these two values from Supabase Project Settings > API.
+// Use the public/anon key ONLY. Never put a service_role key in browser code.
+const SUPABASE_URL = "https://wmbwdieaietetjxoqcrl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Sj2yTWvvFh1ZGs_VSB1LFg_wVpBc2MZ";
 const MAX_NAME_LENGTH = 12;
 
 let fruits = [];
@@ -132,7 +138,7 @@ function setup() {
   strokeCap(ROUND);
   strokeJoin(ROUND);
 
-  leaderboard = loadLeaderboard();
+  loadLeaderboard();
 }
 
 function draw() {
@@ -479,40 +485,83 @@ function endGame(reason) {
   }
 }
 
-function loadLeaderboard() {
+function supabaseConfigured() {
+  return (
+    SUPABASE_URL.startsWith("https://") &&
+    !SUPABASE_URL.includes("PASTE_YOUR_") &&
+    SUPABASE_ANON_KEY.length > 20 &&
+    !SUPABASE_ANON_KEY.includes("PASTE_YOUR_")
+  );
+}
+
+function supabaseHeaders(extra = {}) {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json",
+    ...extra,
+  };
+}
+
+async function loadLeaderboard() {
+  if (!supabaseConfigured()) {
+    leaderboard = [];
+    leaderboardError = "GLOBAL LEADERBOARD NOT CONNECTED";
+    return;
+  }
+
+  leaderboardLoading = true;
+  leaderboardError = "";
+
   try {
-    const raw = localStorage.getItem(LEADERBOARD_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((entry) => entry && typeof entry.name === "string" && Number.isFinite(entry.score))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
+    const url = `${SUPABASE_URL}/rest/v1/leaderboard?select=name,score&order=score.desc,updated_at.asc&limit=5`;
+    const res = await fetch(url, { headers: supabaseHeaders() });
+    if (!res.ok) throw new Error(`Leaderboard request failed (${res.status})`);
+
+    const data = await res.json();
+    leaderboard = Array.isArray(data)
+      ? data
+          .filter((entry) => entry && typeof entry.name === "string" && Number.isFinite(Number(entry.score)))
+          .map((entry) => ({ name: entry.name, score: Number(entry.score) }))
+          .slice(0, 5)
+      : [];
   } catch (err) {
-    console.warn("Could not load leaderboard:", err);
-    return [];
+    console.warn("Could not load global leaderboard:", err);
+    leaderboardError = "COULDN'T LOAD GLOBAL SCORES";
+  } finally {
+    leaderboardLoading = false;
   }
 }
 
-function saveScore(name, newScore) {
+async function saveScore(name, newScore) {
   const cleanName = (name || "PLAYER").trim().slice(0, MAX_NAME_LENGTH);
-  const existing = leaderboard.find((entry) => entry.name.toLowerCase() === cleanName.toLowerCase());
-
-  // Keep each nickname's personal best so one player cannot fill all five slots.
-  if (existing) {
-    existing.score = max(existing.score, newScore);
-  } else {
-    leaderboard.push({ name: cleanName, score: newScore });
+  if (!cleanName || !supabaseConfigured()) {
+    if (!supabaseConfigured()) leaderboardError = "GLOBAL LEADERBOARD NOT CONNECTED";
+    return;
   }
 
-  leaderboard.sort((a, b) => b.score - a.score);
-  leaderboard = leaderboard.slice(0, 5);
+  // Optimistically show this score immediately while the network request finishes.
+  const preview = leaderboard.filter((entry) => entry.name.toLowerCase() !== cleanName.toLowerCase());
+  preview.push({ name: cleanName, score: newScore });
+  preview.sort((a, b) => b.score - a.score);
+  leaderboard = preview.slice(0, 5);
+
+  leaderboardLoading = true;
+  leaderboardError = "";
 
   try {
-    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboard));
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/submit_score`, {
+      method: "POST",
+      headers: supabaseHeaders(),
+      body: JSON.stringify({ p_name: cleanName, p_score: Math.max(0, Math.floor(newScore)) }),
+    });
+    if (!res.ok) throw new Error(`Score save failed (${res.status})`);
+
+    await loadLeaderboard();
   } catch (err) {
-    console.warn("Could not save leaderboard:", err);
+    console.warn("Could not save global score:", err);
+    leaderboardError = "SCORE COULDN'T BE SAVED";
+    leaderboardLoading = false;
   }
 }
 
@@ -1069,7 +1118,7 @@ function drawNameScreen() {
   textStyle(NORMAL);
   textSize(15);
   fill(92);
-  text("Enter a nickname to save your best score on this device.", width / 2, cardY + 139);
+  text("Enter a nickname to save your best score to the global leaderboard.", width / 2, cardY + 139);
 
   const boxW = 410;
   const boxH = 62;
@@ -1106,12 +1155,12 @@ function drawNameScreen() {
   textStyle(BOLD);
   textSize(11);
   fill(20);
-  text("LOCAL TOP 5", cardX + 66, lbY);
+  text("GLOBAL TOP 5", cardX + 66, lbY);
 
   textAlign(RIGHT, CENTER);
   textStyle(NORMAL);
   fill(110);
-  text("BEST SCORES ON THIS DEVICE", cardX + cardW - 66, lbY);
+  text(leaderboardLoading ? "SYNCING…" : "ALL PLAYERS · ALL DEVICES", cardX + cardW - 66, lbY);
 
   const rows = max(1, min(5, leaderboard.length));
   for (let i = 0; i < rows; i++) {
@@ -1130,7 +1179,7 @@ function drawNameScreen() {
       text(entry.score, cardX + cardW - 66, y);
     } else {
       textStyle(NORMAL);
-      text("No scores yet — set the first one.", cardX + 66, y);
+      text(leaderboardError || (leaderboardLoading ? "Loading global scores…" : "No scores yet — set the first one."), cardX + 66, y);
     }
   }
 
@@ -1256,7 +1305,13 @@ function drawGameOverScreen() {
   fill(20);
   textStyle(BOLD);
   textSize(12);
-  text("LOCAL TOP 5", x + 56, y + 189);
+  text("GLOBAL TOP 5", x + 56, y + 189);
+
+  textAlign(RIGHT, CENTER);
+  textStyle(NORMAL);
+  textSize(10);
+  fill(115);
+  text(leaderboardLoading ? "SYNCING…" : (leaderboardError || "ALL PLAYERS · ALL DEVICES"), x + panelW - 56, y + 189);
 
   const startY = y + 225;
   for (let i = 0; i < 5; i++) {
